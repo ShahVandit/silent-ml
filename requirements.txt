@@ -1,0 +1,6 @@
+# Tested versions (CPU). A CUDA build of torch works identically for P3/GPU.
+torch==2.5.1
+torchvision==0.20.1
+numpy==1.25.2
+PyYAML==5.4.1
+pytest==8.0.0
