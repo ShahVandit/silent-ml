@@ -1,6 +1,8 @@
-# Tested versions (CPU). A CUDA build of torch works identically for P3/GPU.
-torch==2.5.1
-torchvision==0.20.1
-numpy==1.25.2
-PyYAML==5.4.1
-pytest==8.0.0
+# Install a CUDA build of torch separately to match your driver, e.g.
+#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Versions are lower bounds rather than pins: exact pins break on newer Pythons
+# (PyYAML 5.x, for instance, fails to build against Cython 3).
+torch>=2.0
+numpy>=1.24
+PyYAML>=6.0
+pytest>=7.0
