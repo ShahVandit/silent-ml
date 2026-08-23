@@ -300,7 +300,25 @@ def _make_optimizer(model: nn.Module, config: dict) -> torch.optim.Optimizer:
 
 
 def _device() -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    """Training device, overridable with SILENTML_DEVICE (e.g. "cpu", "cuda:1").
+
+    The model is small enough to train on CPU in a reasonable time, so falling
+    back is a real option when the GPU is occupied by another job.
+    """
+    override = os.environ.get("SILENTML_DEVICE")
+    if override:
+        return torch.device(override)
+    if not torch.cuda.is_available():
+        return torch.device("cpu")
+    try:
+        # Probe before committing: a GPU that is full should degrade to CPU
+        # rather than aborting a long generation sweep with an OOM.
+        torch.zeros(1, device="cuda")
+        return torch.device("cuda")
+    except Exception:   # OOM, driver mismatch, AcceleratorError, ...
+        print("[silentml] CUDA is present but unusable (likely out of memory); "
+              "falling back to CPU. Set SILENTML_DEVICE to override.")
+        return torch.device("cpu")
 
 
 def train(model, train_loader, val_loader, config, seed) -> History:
