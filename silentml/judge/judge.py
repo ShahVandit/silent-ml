@@ -139,6 +139,13 @@ def judge_episode(
     details["acc_pass"] = acc_pass
     details["rr_pass"] = rr_pass
 
+    # Diagnosis quality is recorded for every submission, including ones that fail
+    # the functional gate: "diagnosed the fault but could not repair it" is a
+    # distinct and informative outcome. It only affects reward once the gate
+    # passes, so the zero-reward-on-functional-failure rule is unchanged.
+    diag_delta, diag_ok = _score_diagnosis(diagnosis, operator.diagnosis_keywords)
+    details["diagnosis_ok"] = diag_ok
+
     breakdown: dict[str, float] = {}
     if not functional_pass:
         breakdown["R_functional"] = 0.0
@@ -177,7 +184,6 @@ def judge_episode(
     else:
         breakdown["R_fix_quality"] = R_FIX_QUALITY / 2  # valid-but-different
 
-    diag_delta, diag_ok = _score_diagnosis(diagnosis, operator.diagnosis_keywords)
     breakdown["R_diagnosis" if diag_ok else "P_diagnosis_wrong"] = diag_delta
 
     reward = sum(breakdown.values())
