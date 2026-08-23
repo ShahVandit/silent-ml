@@ -31,12 +31,24 @@ from silentml.bugs.operators import Operator, get_operator
 from silentml.pipelines.base import RunResult, run_pipeline
 
 PIPELINE_TEMPLATES = {
-    "cnn_fashion": Path(__file__).resolve().parent / "pipelines" / "cnn_fashion",
+    "transformer_text": Path(__file__).resolve().parent / "pipelines" / "transformer_text",
 }
 
 
 class TriageError(RuntimeError):
     """Raised when an injected mutant does not form a valid silent-bug episode."""
+
+
+# The clean baseline is identical for every operator on a pipeline, so it is run
+# once per (pipeline, seed) and reused across the whole generation sweep.
+_CLEAN_CACHE: dict[tuple[str, int], RunResult] = {}
+
+
+def _clean_run(template_dir: Path, pipeline_id: str, seed: int) -> RunResult:
+    key = (pipeline_id, seed)
+    if key not in _CLEAN_CACHE:
+        _CLEAN_CACHE[key] = run_pipeline(template_dir, seed=seed)
+    return _CLEAN_CACHE[key]
 
 
 # --- Layer 3 & 4 artifacts (assembled here; Layer 2 comes from the collector) -
@@ -151,16 +163,19 @@ def generate_episode(
     # Run clean (template) and buggy (episode) across generation seeds.
     clean_runs, buggy_runs = [], []
     for s in gen_seeds:
-        clean_runs.append(run_pipeline(template_dir, seed=s))
+        clean_runs.append(_clean_run(template_dir, pipeline_id, s))
         collector = LayerStatsCollector()
         try:
             buggy_runs.append(run_pipeline(pcode_dir, seed=s, collector=collector))
         except Exception as e:  # a crashing mutant is not a silent bug
+            shutil.rmtree(ep_dir, ignore_errors=True)
             raise TriageError(f"{operator_id} crashed the pipeline: {e}") from e
 
     clean_acc = mean(r.eval.accuracy for r in clean_runs)
     buggy_acc = mean(r.eval.accuracy for r in buggy_runs)
     if clean_acc - buggy_acc < drop_margin:
+        # Leave no partial directory behind: a rejected mutant is not an episode.
+        shutil.rmtree(ep_dir, ignore_errors=True)
         raise TriageError(
             f"{operator_id} drop {clean_acc-buggy_acc:.3f} < margin {drop_margin} "
             f"(clean {clean_acc:.3f}, buggy {buggy_acc:.3f}) — not a measurable silent bug"
@@ -194,6 +209,7 @@ def generate_episode(
             "deepcrime_group": operator.deepcrime_group,
             "humbatova": operator.humbatova,
             "saner2024": operator.saner2024,
+            "jahan2025": operator.jahan2025,
         },
         "difficulty": operator.difficulty,
         "bug_mechanism": operator.param_desc,
