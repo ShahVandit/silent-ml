@@ -24,7 +24,16 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    # Seeding CUDA creates a CUDA context, which costs a few hundred MB and
+    # fails outright on a GPU another job has filled. Skip it unless CUDA is
+    # actually going to be used, so a CPU run never touches the device.
+    if os.environ.get("SILENTML_DEVICE", "").startswith("cuda") or (
+        not os.environ.get("SILENTML_DEVICE") and torch.cuda.is_available()
+    ):
+        try:
+            torch.cuda.manual_seed_all(seed)
+        except Exception:
+            pass   # GPU unusable; the pipeline falls back to CPU anyway
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
