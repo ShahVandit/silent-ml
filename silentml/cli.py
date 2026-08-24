@@ -99,6 +99,7 @@ def _benchmark(args) -> int:
         temperature=args.temperature,
         limit=args.limit,
         timeout=args.timeout,
+        trajectory_dir=args.trajectory_dir,
     )
     print(report.render())
     if args.report:
@@ -159,6 +160,8 @@ def main(argv=None) -> int:
                    help="seconds per model request; raise it for CPU inference, "
                         "where a large model needs minutes per reply")
     b.add_argument("--limit", type=int, default=None, help="only the first N episodes")
+    b.add_argument("--trajectory-dir", default="trajectories",
+                   help="write each episode's tool calls here for diagnosis")
     b.set_defaults(func=_benchmark)
 
     args = parser.parse_args(argv)

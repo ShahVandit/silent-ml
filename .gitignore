@@ -6,3 +6,4 @@ __pycache__/
 gen*.log
 benchmark_report.json
 episodes/
+trajectories/

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import statistics
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -127,6 +128,38 @@ class BenchmarkReport:
         return "\n".join(lines)
 
 
+def _save_trajectory(out_dir: Path, episode_id: str, result, judge) -> None:
+    """Persist the agent's tool calls so failures can be diagnosed after the fact.
+
+    Aggregate scores say an episode failed; only the trajectory says why - whether
+    patches were rejected, the call budget ran out, or the agent never tried.
+    """
+    steps = []
+    for i, step in enumerate(result.trajectory, 1):
+        args = dict(step.get("args") or {})
+        for key in ("diff", "script"):          # keep payloads readable
+            if key in args:
+                args[key] = str(args[key])[:2000]
+        steps.append({
+            "n": i,
+            "tool": step["tool"],
+            "ok": step["ok"],
+            "args": args,
+            "observation": str(step["observation"])[:2000],
+        })
+    payload = {
+        "episode_id": episode_id,
+        "submitted": result.submitted,
+        "n_tool_calls": result.n_tool_calls,
+        "tool_counts": Counter(s["tool"] for s in steps),
+        "failed_calls": Counter(s["tool"] for s in steps if not s["ok"]),
+        "reward": (judge.reward if judge else None),
+        "steps": steps,
+    }
+    (out_dir / f"{episode_id}.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def _family_of(meta: dict) -> str:
     """Group episodes by fault family for the breakdown table.
 
@@ -158,6 +191,7 @@ def run_benchmark(
     limit: int | None = None,
     verbose: bool = True,
     timeout: float = 180.0,
+    trajectory_dir: str | Path | None = None,
 ) -> BenchmarkReport:
     episodes_dir = Path(episodes_dir)
     eps = sorted(p for p in episodes_dir.iterdir()
@@ -166,6 +200,9 @@ def run_benchmark(
         eps = eps[:limit]
 
     report = BenchmarkReport(model=model)
+    if trajectory_dir:
+        trajectory_dir = Path(trajectory_dir)
+        trajectory_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     for i, ep in enumerate(eps, 1):
         meta = yaml.safe_load((ep / "meta.yaml").read_text(encoding="utf-8"))
@@ -178,6 +215,8 @@ def run_benchmark(
         try:
             result = run_episode(ep, policy, max_calls=max_calls, judge_seeds=judge_seeds)
             judge = result.judge
+            if trajectory_dir:
+                _save_trajectory(Path(trajectory_dir), ep.name, result, judge)
             score = EpisodeScore(
                 episode_id=result.episode_id,
                 operator_id=meta["operator_id"],
