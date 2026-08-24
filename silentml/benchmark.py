@@ -189,6 +189,7 @@ def run_benchmark(
     judge_seeds: tuple[int, ...] = (0, 1),
     temperature: float = 0.0,
     limit: int | None = None,
+    only: list[str] | None = None,
     verbose: bool = True,
     timeout: float = 180.0,
     trajectory_dir: str | Path | None = None,
@@ -196,6 +197,12 @@ def run_benchmark(
     episodes_dir = Path(episodes_dir)
     eps = sorted(p for p in episodes_dir.iterdir()
                  if p.is_dir() and (p / "meta.yaml").exists())
+    if only:
+        wanted = set(only)
+        eps = [p for p in eps
+               if p.name in wanted or p.name.split("__")[-1] in wanted]
+        if not eps:
+            raise ValueError(f"no episodes matched {sorted(wanted)}")
     if limit:
         eps = eps[:limit]
 

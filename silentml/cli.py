@@ -98,6 +98,7 @@ def _benchmark(args) -> int:
         judge_seeds=tuple(args.seeds),
         temperature=args.temperature,
         limit=args.limit,
+        only=args.only,
         timeout=args.timeout,
         trajectory_dir=args.trajectory_dir,
     )
@@ -160,6 +161,8 @@ def main(argv=None) -> int:
                    help="seconds per model request; raise it for CPU inference, "
                         "where a large model needs minutes per reply")
     b.add_argument("--limit", type=int, default=None, help="only the first N episodes")
+    b.add_argument("--only", nargs="+", default=None,
+                   help="run just these operator ids, e.g. --only T_HLR T_OCH")
     b.add_argument("--trajectory-dir", default="trajectories",
                    help="write each episode's tool calls here for diagnosis")
     b.set_defaults(func=_benchmark)
