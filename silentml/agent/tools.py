@@ -62,34 +62,70 @@ class EpisodeSession:
         self.calls.append(ToolCall(tool=tool, args=args, ok=ok))
 
     def _source_path(self, file: str) -> Path:
-        p = (self._pipeline_dir / file).resolve()
-        if self._pipeline_dir.resolve() not in p.parents and p != self._pipeline_dir.resolve():
-            raise ToolError(f"file {file!r} is outside the pipeline directory")
-        if not p.exists():
-            raise ToolError(f"no such file: {file!r}")
-        return p
+        """Resolve a source path, tolerating the forms an agent naturally tries.
+
+        ``execute_code`` shows the file as ``pipeline/pipeline.py`` while paths
+        here are relative to the pipeline directory. Accepting both spellings
+        avoids burning the call budget on a path-convention mismatch that has
+        nothing to do with debugging.
+        """
+        candidates = [file, file.lstrip("./")]
+        if file.startswith("pipeline/"):
+            candidates.append(file[len("pipeline/"):])
+        candidates.append(Path(file).name)
+
+        root = self._pipeline_dir.resolve()
+        for candidate in candidates:
+            p = (self._pipeline_dir / candidate).resolve()
+            if root not in p.parents and p != root:
+                continue
+            if p.exists() and p.is_file():
+                return p
+
+        available = sorted(f.name for f in self._pipeline_dir.glob("*.py"))
+        raise ToolError(f"no such file: {file!r}. Available files: {available}")
 
     # -- the five tools -------------------------------------------------------
     def read_artifact(self, name: str) -> str:
         manifest = self.task.get("artifact_manifest", [])
-        if name not in manifest:
+        # Agents that list the artifacts directory see "loss_curves.json"; the
+        # manifest uses bare names. Accept either rather than failing the call.
+        key = name
+        if key not in manifest:
+            stem = Path(str(name)).name
+            if stem.endswith(".json"):
+                stem = stem[: -len(".json")]
+            key = stem if stem in manifest else name
+        if key not in manifest:
             self._log("read_artifact", {"name": name}, False)
-            raise ToolError(f"unknown artifact {name!r}. Available: {manifest}")
-        payload = (self.episode_dir / "artifacts" / f"{name}.json").read_text(encoding="utf-8")
-        self._log("read_artifact", {"name": name}, True)
+            raise ToolError(
+                f"unknown artifact {name!r}. Available artifact names (pass them "
+                f"exactly, without a .json suffix): {manifest}"
+            )
+        payload = (self.episode_dir / "artifacts" / f"{key}.json").read_text(encoding="utf-8")
+        self._log("read_artifact", {"name": key}, True)
         return payload
 
     def view_code(self, file: str = "pipeline.py", start: int | None = None,
                   end: int | None = None) -> str:
         path = self._source_path(file)
         lines = path.read_text(encoding="utf-8").splitlines()
+        n = len(lines)
         s = 1 if start is None else max(1, start)
-        e = len(lines) if end is None else min(len(lines), end)
+        e = n if end is None else min(n, end)
+        if s > n:
+            # Silently returning nothing reads as a broken tool; say what the
+            # file's real extent is so the next call can be aimed correctly.
+            self._log("view_code", {"file": file, "start": s, "end": e}, False)
+            raise ToolError(
+                f"start line {s} is past the end of {path.name}, which has {n} lines."
+            )
         if e - s + 1 > MAX_VIEW_LINES:
             e = s + MAX_VIEW_LINES - 1
+        header = f"# {path.name} lines {s}-{e} of {n}"
         numbered = [f"{i:>4}\t{lines[i-1]}" for i in range(s, e + 1)]
         self._log("view_code", {"file": file, "start": s, "end": e}, True)
-        return "\n".join(numbered)
+        return "\n".join([header] + numbered)
 
     def apply_patch(self, diff: str) -> str:
         file = "pipeline.py"

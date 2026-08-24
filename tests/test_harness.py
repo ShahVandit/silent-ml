@@ -175,3 +175,46 @@ def test_diagnosis_scored_even_when_fix_fails(monkeypatch):
     assert not r.functional_pass
     assert r.reward == 0.0                    # reward semantics unchanged
     assert r.details["diagnosis_ok"] is True  # but the correct diagnosis is recorded
+
+
+# --- tool affordances --------------------------------------------------------
+# A trajectory showed an agent spending its entire call budget on navigation:
+# read_artifact rejected the filenames execute_code had shown it, view_code
+# rejected "pipeline/pipeline.py", and out-of-range views returned nothing at
+# all. None of that measures debugging skill, so the tools accept what an agent
+# naturally tries.
+def test_view_code_accepts_the_path_execute_code_displays():
+    s = EpisodeSession(EP)
+    try:
+        assert "CONFIG" in s.view_code("pipeline/pipeline.py", 1, 60)
+        assert "CONFIG" in s.view_code("./pipeline.py", 1, 60)
+    finally:
+        s.cleanup()
+
+
+def test_view_code_reports_range_and_rejects_past_eof():
+    s = EpisodeSession(EP)
+    try:
+        assert "lines 1-20 of" in s.view_code("pipeline.py", 1, 20)
+        with pytest.raises(ToolError, match="past the end"):
+            s.view_code("pipeline.py", 99999, 100050)
+    finally:
+        s.cleanup()
+
+
+def test_view_code_unknown_file_lists_what_exists():
+    s = EpisodeSession(EP)
+    try:
+        with pytest.raises(ToolError, match="Available files"):
+            s.view_code("nope.py")
+    finally:
+        s.cleanup()
+
+
+def test_read_artifact_accepts_the_json_filename():
+    s = EpisodeSession(EP)
+    try:
+        assert s.read_artifact("loss_curves.json") == s.read_artifact("loss_curves")
+        assert s.read_artifact("artifacts/loss_curves.json")
+    finally:
+        s.cleanup()

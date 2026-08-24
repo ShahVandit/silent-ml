@@ -17,13 +17,18 @@ from silentml.judge.judge import JudgeResult, judge_episode
 Policy = Callable[[str, list[dict]], dict]
 
 TOOLS_DESCRIPTION = """\
-- read_artifact(name): retrieve a named precomputed diagnostic (no code change).
-- view_code(file, start, end): return source lines from the pipeline.
+- read_artifact(name): retrieve a precomputed diagnostic. Pass a name from the
+  manifest below exactly, with no .json suffix and no directory.
+- view_code(file, start, end): return numbered source lines. The only file is
+  "pipeline.py"; that is the default, so file may be omitted.
 - apply_patch(diff): apply a unified diff to pipeline.py (syntax-validated).
-- execute_code(script): run a CPU-only Python script (30s limit) with read access
-  to source/data/checkpoint/artifacts; cannot write source. Returns stdout/stderr.
-- submit(diagnosis): end the episode; requires >=1 apply_patch and a non-empty
-  diagnosis (JSON with a "diagnosis" field)."""
+  Required before submit.
+- execute_code(script): run a CPU-only Python script (30s limit). It runs in a
+  throwaway copy holding pipeline/pipeline.py, artifacts/ and baseline/, so the
+  paths it sees differ from the arguments the other tools take. Returns
+  stdout/stderr.
+- submit(diagnosis): end the episode; requires >=1 successful apply_patch and a
+  non-empty diagnosis (JSON with a "diagnosis" field)."""
 
 PROMPT_TEMPLATE = """\
 You are an ML debugging agent. A supervised learning pipeline has completed
@@ -42,6 +47,14 @@ root cause and submit a fix.
 [PRE-COMPUTED ARTIFACTS]
 Available via read_artifact(name):
 {artifact_manifest}
+
+[HOW TO SPEND YOUR TURNS]
+You have a limited number of tool calls, so do not spend them exploring the
+filesystem - the layout above is complete. A workable order is: read the
+artifacts that bear on the symptom, view the region of pipeline.py they point
+at, form a hypothesis, apply_patch, then submit. Reach apply_patch and submit
+well before the budget runs out; an episode that ends without submitting scores
+zero however good the analysis was.
 
 [OUTPUT REQUIREMENTS]
 Investigate in any order, then submit a JSON diagnosis of the form
