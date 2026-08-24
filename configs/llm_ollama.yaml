@@ -16,12 +16,15 @@ qwen3-coder:
   generate_kwargs:
     temperature: 0.0
 
-# Same model served by vLLM instead.
+# Same model served by vLLM. Prefer this over Ollama for agent work: Ollama
+# silently ignores tool_choice="required", so the model is free to answer in
+# prose instead of calling a tool, and a benchmark then measures tool-calling
+# compliance rather than task ability. vLLM enforces it.
 qwen3-coder-vllm:
-  model: qwen3-coder:30b
+  model: Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8   # must match the served id
   tokenizer: Qwen/Qwen3-Coder-30B-A3B-Instruct
   tags: [vllm]
-  endpoint: "http://localhost:8000/v1"
+  endpoint: "http://localhost:8010/v1"
   api_key: "vllm"
   context_limit: 32
   generate_kwargs:

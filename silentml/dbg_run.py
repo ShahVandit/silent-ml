@@ -19,20 +19,33 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_TOOLS = ["view", "edit", "grep", "listdir", "bash", "submit_diagnosis"]
+# "bash" is deliberately absent: with a shell available the model spent its
+# turns running `python -c "print(...)"` to narrate its reasoning, satisfying
+# the forced tool call without doing anything. Without it, every turn has to
+# be a real action.
+DEFAULT_TOOLS = ["view", "edit", "grep", "listdir", "submit_diagnosis"]
 
 SYSTEM_PROMPT = (
     "You are a debugging agent specialised in machine learning code. A training "
     "pipeline runs to completion without errors but the model underperforms, and "
     "exactly one bug is responsible.\n"
-    "Work from evidence: read the pre-computed diagnostics in artifacts/ before "
-    "reading code, and let them tell you which part of pipeline.py to inspect. Do "
-    "not assume you recognise the code - a plausible-looking line may be the bug.\n"
-    "You must make a tool call every turn, one at a time. Do not repeat an action "
-    "that already failed or that told you something you know.\n"
-    "Once you can name the faulty line, edit it. An investigation that ends "
-    "without an edit scores nothing. Finish by calling submit_diagnosis with a "
-    "one-sentence description of the bug."
+    "The fault can be anywhere in the pipeline: the training configuration, the "
+    "data handling, the training loop, the model code, or the evaluation. Weigh "
+    "them by what the evidence supports and check the simplest explanations "
+    "first - a wrong hyperparameter is as plausible as a wrong tensor operation, "
+    "and far more common.\n"
+    "Work from evidence. Read the pre-computed diagnostics in artifacts/ before "
+    "reading code: the loss and accuracy curves say whether the model learned at "
+    "all, and the per-class and per-layer statistics say where it broke down. Let "
+    "them narrow the search before you open the source.\n"
+    "You must make a tool call every turn, one at a time. Never repeat an action "
+    "that already failed or that told you something you know, and do not re-read "
+    "code you have already read.\n"
+    "Act on your best hypothesis rather than seeking certainty. Once you have an "
+    "explanation that accounts for the observed symptom, edit the code and "
+    "submit. An investigation that ends without an edit scores nothing, and a "
+    "wrong fix you can articulate is worth more than analysis you never commit "
+    "to. Finish with submit_diagnosis and a one-sentence description of the bug."
 )
 
 
@@ -128,7 +141,7 @@ def main(argv=None) -> int:
     p.add_argument("--llm-config", default=None,
                    help="path to the debug-gym llm config yaml")
     p.add_argument("--tools", nargs="+", default=DEFAULT_TOOLS)
-    p.add_argument("--max-steps", type=int, default=25)
+    p.add_argument("--max-steps", type=int, default=50)
     p.add_argument("--temperature", type=float, default=0.0)
     p.add_argument("--seeds", type=int, nargs="+", default=[0, 1],
                    help="judge retraining seeds")
