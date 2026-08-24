@@ -157,6 +157,7 @@ def run_benchmark(
     temperature: float = 0.0,
     limit: int | None = None,
     verbose: bool = True,
+    timeout: float = 180.0,
 ) -> BenchmarkReport:
     episodes_dir = Path(episodes_dir)
     eps = sorted(p for p in episodes_dir.iterdir()
@@ -169,7 +170,7 @@ def run_benchmark(
     for i, ep in enumerate(eps, 1):
         meta = yaml.safe_load((ep / "meta.yaml").read_text(encoding="utf-8"))
         policy = LLMPolicy(model=model, base_url=base_url, api_key=api_key,
-                           temperature=temperature)
+                           temperature=temperature, timeout=timeout)
         if verbose:
             print(f"[{i}/{len(eps)}] {ep.name} ...", flush=True)
 

@@ -98,6 +98,7 @@ def _benchmark(args) -> int:
         judge_seeds=tuple(args.seeds),
         temperature=args.temperature,
         limit=args.limit,
+        timeout=args.timeout,
     )
     print(report.render())
     if args.report:
@@ -154,6 +155,9 @@ def main(argv=None) -> int:
     b.add_argument("--seeds", type=int, nargs="+", default=[0, 1],
                    help="judge retraining seeds")
     b.add_argument("--temperature", type=float, default=0.0)
+    b.add_argument("--timeout", type=float, default=180.0,
+                   help="seconds per model request; raise it for CPU inference, "
+                        "where a large model needs minutes per reply")
     b.add_argument("--limit", type=int, default=None, help="only the first N episodes")
     b.set_defaults(func=_benchmark)
 
