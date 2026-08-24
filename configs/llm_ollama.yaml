@@ -1,8 +1,15 @@
 # debug-gym LLM config for a locally served model.
 # Point --llm-config at this file: the key is what you pass to --model.
+#
+# The `vllm` tag selects debug-gym's HuggingFaceLLM, which counts tokens with the
+# model's own tokenizer instead of tiktoken. The tag name refers to the tokenizer
+# path, not the server - HuggingFaceLLM subclasses OpenAILLM, so it speaks to any
+# OpenAI-compatible endpoint, Ollama included. Exact counts matter because they
+# decide when the conversation history gets truncated.
 qwen3-coder:
-  model: qwen3-coder:30b          # the tag Ollama serves
-  tokenizer: Qwen/Qwen3-Coder-30B-A3B-Instruct
+  model: qwen3-coder:30b                          # the tag Ollama serves
+  tokenizer: Qwen/Qwen3-Coder-30B-A3B-Instruct    # downloaded once from HF
+  tags: [vllm]
   endpoint: "http://localhost:11434/v1"
   api_key: "ollama"               # Ollama ignores it, but the client requires one
   context_limit: 32               # thousands of tokens
@@ -13,6 +20,7 @@ qwen3-coder:
 qwen3-coder-vllm:
   model: qwen3-coder:30b
   tokenizer: Qwen/Qwen3-Coder-30B-A3B-Instruct
+  tags: [vllm]
   endpoint: "http://localhost:8000/v1"
   api_key: "vllm"
   context_limit: 32
