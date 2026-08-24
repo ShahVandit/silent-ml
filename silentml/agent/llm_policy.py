@@ -56,6 +56,28 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "replace_in_file",
+            "description": (
+                "Edit pipeline.py by replacing an exact snippet of the current "
+                "source with new text. Prefer this over apply_patch. Copy 'old' "
+                "verbatim from view_code output, excluding the line numbers and "
+                "the tab that follows them. 'old' must appear exactly once."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "old": {"type": "string",
+                            "description": "Exact snippet to replace."},
+                    "new": {"type": "string",
+                            "description": "Replacement text."},
+                },
+                "required": ["old", "new"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "apply_patch",
             "description": (
                 "Apply a unified diff to pipeline.py. The diff must contain a @@ hunk "
@@ -86,7 +108,8 @@ TOOL_SCHEMAS: list[dict] = [
         "function": {
             "name": "submit",
             "description": (
-                "End the episode. Requires at least one successful apply_patch. "
+                "End the episode. Requires at least one successful edit "
+                "(replace_in_file or apply_patch). "
                 'Pass a JSON string: {"diagnosis": "...", "supporting_evidence": [...]}'
             ),
             "parameters": {

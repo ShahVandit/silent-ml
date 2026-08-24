@@ -218,3 +218,40 @@ def test_read_artifact_accepts_the_json_filename():
         assert s.read_artifact("artifacts/loss_curves.json")
     finally:
         s.cleanup()
+
+
+# --- replace_in_file ---------------------------------------------------------
+# A unified diff is a demanding format; a trajectory showed the model viewing the
+# faulty config three times and never attempting an edit. Search-and-replace is
+# the lower-friction primitive, so it gets the same guarantees as apply_patch.
+def test_replace_in_file_edits_and_counts_as_a_patch():
+    s = EpisodeSession(EP)
+    try:
+        assert s.patches_applied == 0
+        s.replace_in_file('"lr": 3e-6,', '"lr": 3e-4,')
+        assert '"lr": 3e-4,' in s.patched_source()
+        assert s.patches_applied == 1
+        s.submit('{"diagnosis": "learning rate too low"}')   # no longer refused
+    finally:
+        s.cleanup()
+
+
+def test_replace_in_file_rejects_missing_or_ambiguous_snippets():
+    s = EpisodeSession(EP)
+    try:
+        with pytest.raises(ToolError, match="does not appear"):
+            s.replace_in_file("this text is not in the file", "x")
+        with pytest.raises(ToolError, match="appears .* times"):
+            s.replace_in_file("import torch", "import torch  # noqa")
+    finally:
+        s.cleanup()
+
+
+def test_replace_in_file_rejects_edits_that_break_syntax():
+    s = EpisodeSession(EP)
+    try:
+        with pytest.raises(ToolError, match="syntax error"):
+            s.replace_in_file("def build_model()", "def build_model(")
+        assert s.patches_applied == 0
+    finally:
+        s.cleanup()

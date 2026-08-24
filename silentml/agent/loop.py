@@ -21,8 +21,11 @@ TOOLS_DESCRIPTION = """\
   manifest below exactly, with no .json suffix and no directory.
 - view_code(file, start, end): return numbered source lines. The only file is
   "pipeline.py"; that is the default, so file may be omitted.
-- apply_patch(diff): apply a unified diff to pipeline.py (syntax-validated).
-  Required before submit.
+- replace_in_file(old, new): replace an exact snippet of pipeline.py with new
+  text. The simplest way to edit - copy `old` verbatim from view_code output
+  (without the line numbers) and give the corrected text as `new`.
+- apply_patch(diff): apply a unified diff to pipeline.py, if you prefer diffs.
+  Either this or replace_in_file must succeed before submit.
 - execute_code(script): run a CPU-only Python script (30s limit). It runs in a
   throwaway copy holding pipeline/pipeline.py, artifacts/ and baseline/, so the
   paths it sees differ from the arguments the other tools take. Returns
@@ -52,17 +55,18 @@ Available via read_artifact(name):
 You have a limited number of tool calls, so do not spend them exploring the
 filesystem - the layout above is complete. A workable order is: read the
 artifacts that bear on the symptom, view the region of pipeline.py they point
-at, form a hypothesis, apply_patch, then submit. Reach apply_patch and submit
-well before the budget runs out; an episode that ends without submitting scores
-zero however good the analysis was.
+at, form a hypothesis, edit with replace_in_file, then submit. Make the edit and
+submit well before the budget runs out; an episode that ends without submitting
+scores zero however good the analysis was. Do not re-read source you have already
+seen - if you can name the faulty line, edit it.
 
 [OUTPUT REQUIREMENTS]
 Investigate in any order, then submit a JSON diagnosis of the form
 {{"diagnosis": "<bug_type> in <file> - one-sentence causal mechanism",
   "supporting_evidence": ["exact artifact signals"]}}.
 Constraints: do not optimise beyond fixing the identified bug; do not modify raw
-data; execute_code is CPU-only with a 30s limit; submit is rejected without a
-patch and a non-empty diagnosis. Exactly 1 bug has been injected."""
+data; execute_code is CPU-only with a 30s limit; submit is rejected unless an
+edit has succeeded and the diagnosis is non-empty. Exactly 1 bug has been injected."""
 
 
 def build_prompt(session: EpisodeSession) -> str:
@@ -92,6 +96,9 @@ def _dispatch(session: EpisodeSession, tool: str, args: dict) -> str:
                                  args.get("start"), args.get("end"))
     if tool == "apply_patch":
         return session.apply_patch(args["diff"])
+    if tool == "replace_in_file":
+        return session.replace_in_file(args["old"], args["new"],
+                                       args.get("file", "pipeline.py"))
     if tool == "execute_code":
         return session.execute_code(args["script"])
     if tool == "submit":

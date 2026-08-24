@@ -127,6 +127,46 @@ class EpisodeSession:
         self._log("view_code", {"file": file, "start": s, "end": e}, True)
         return "\n".join([header] + numbered)
 
+    def replace_in_file(self, old: str, new: str, file: str = "pipeline.py") -> str:
+        """Replace an exact snippet of source with new text.
+
+        A unified diff is a demanding format - exact context lines, correct hunk
+        headers - and a model that is unsure of it may avoid editing altogether.
+        Search-and-replace states the same intent with far less that can go
+        wrong, so it is offered alongside apply_patch.
+        """
+        path = self._source_path(file)
+        original = path.read_text(encoding="utf-8")
+        if not old:
+            self._log("replace_in_file", {"file": file}, False)
+            raise ToolError("'old' must be a non-empty snippet of the current source.")
+
+        count = original.count(old)
+        if count == 0:
+            self._log("replace_in_file", {"file": file}, False)
+            raise ToolError(
+                "that snippet does not appear in the file. Copy it verbatim from "
+                "view_code output, without the line numbers or the tab after them."
+            )
+        if count > 1:
+            self._log("replace_in_file", {"file": file}, False)
+            raise ToolError(
+                f"that snippet appears {count} times; include surrounding lines to "
+                f"make it unique."
+            )
+
+        patched = original.replace(old, new)
+        try:
+            compile(patched, file, "exec")
+        except SyntaxError as e:
+            self._log("replace_in_file", {"file": file}, False)
+            raise ToolError(f"the edited source has a syntax error: {e}") from e
+        path.write_text(patched, encoding="utf-8")
+        self.patches_applied += 1
+        self._log("replace_in_file", {"file": file}, True)
+        return (f"Replaced 1 occurrence in {file}. Edits this episode: "
+                f"{self.patches_applied}. Call submit when the fix is complete.")
+
     def apply_patch(self, diff: str) -> str:
         file = "pipeline.py"
         path = self._source_path(file)
@@ -135,7 +175,10 @@ class EpisodeSession:
             patched = apply_unified_diff(original, diff)
         except PatchError as e:
             self._log("apply_patch", {"file": file}, False)
-            raise ToolError(f"patch did not apply: {e}") from e
+            raise ToolError(
+                f"patch did not apply: {e}. If the diff format is getting in the "
+                f"way, use replace_in_file(old, new) instead."
+            ) from e
         try:
             compile(patched, file, "exec")
         except SyntaxError as e:
