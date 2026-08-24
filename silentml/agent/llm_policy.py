@@ -182,11 +182,15 @@ class LLMPolicy:
     use_native_tools: bool = True
     messages: list[dict] = field(default_factory=list, init=False)
     _last_seen: int = field(default=0, init=False)
+    # The tool_call this policy is waiting on a result for, so the result can be
+    # returned as a properly addressed "tool" message.
+    _pending_call: dict | None = field(default=None, init=False)
     parse_failures: int = field(default=0, init=False)
 
     def reset(self) -> None:
         self.messages = []
         self._last_seen = 0
+        self._pending_call = None
         self.parse_failures = 0
 
     def __call__(self, prompt: str, history: list[dict]) -> dict:
@@ -201,13 +205,27 @@ class LLMPolicy:
             })
             self.messages.append({"role": "user", "content": prompt})
 
-        # Feed back any observations produced since the last model turn.
+        # Feed back any observations produced since the last model turn. A result
+        # for a native tool call must come back as a "tool" message addressed to
+        # that call's id: the chat template renders it as <tool_response>, and
+        # that framing is what keeps the model calling tools on later turns.
         for step in history[self._last_seen:]:
-            obs = step["observation"]
-            self.messages.append({
-                "role": "user",
-                "content": f"Result of {step['tool']}:\n{obs[:6000]}",
-            })
+            obs = str(step["observation"])[:6000]
+            if self._pending_call:
+                self.messages.append({
+                    "role": "tool",
+                    "tool_call_id": self._pending_call["id"],
+                    "name": self._pending_call["name"],
+                    "content": obs,
+                })
+                self._pending_call = None
+            else:
+                # The action came from the JSON fallback, so there is no call id
+                # to address and a plain user turn is the only option.
+                self.messages.append({
+                    "role": "user",
+                    "content": f"Result of {step['tool']}:\n{obs}",
+                })
         self._last_seen = len(history)
 
         action = self._request_action()
@@ -244,10 +262,16 @@ class LLMPolicy:
             message = resp["choices"][0]["message"]
         except (KeyError, IndexError) as e:
             raise LLMError(f"unexpected response shape: {str(resp)[:400]}") from e
-        self.messages.append({
+        # Echo the assistant turn back verbatim, tool_calls included. Dropping
+        # them erases the model's own demonstration that it answers with tool
+        # calls, and it degenerates to prose on subsequent turns.
+        assistant_msg: dict[str, Any] = {
             "role": "assistant",
             "content": message.get("content") or "",
-        })
+        }
+        if message.get("tool_calls"):
+            assistant_msg["tool_calls"] = message["tool_calls"]
+        self.messages.append(assistant_msg)
 
         # Preferred path: the server emitted a structured tool call.
         for call in message.get("tool_calls") or []:
@@ -255,6 +279,10 @@ class LLMPolicy:
             action = _normalise_action({"name": fn.get("name"),
                                         "arguments": fn.get("arguments", {})})
             if action:
+                # Without an id there is nothing to address a tool message to,
+                # so fall back to reporting the result as a user turn.
+                if call.get("id"):
+                    self._pending_call = {"id": call["id"], "name": fn.get("name")}
                 return action
 
         # Fallback: recover a JSON action from the message body.

@@ -84,6 +84,67 @@ def test_observations_are_fed_back(monkeypatch):
     assert any("GRAD_STATS_HERE" in m["content"] for m in policy.messages)
 
 
+# --- OpenAI tool-calling protocol --------------------------------------------
+# Dropping tool_calls from the echoed assistant turn, or answering with a "user"
+# message instead of a "tool" one, makes the model stop calling tools after the
+# first turn. These tests pin the wire format down.
+def _native(call_id: str, name: str, args: str):
+    return _reply(tool_calls=[{"id": call_id, "type": "function",
+                               "function": {"name": name, "arguments": args}}])
+
+
+def test_assistant_turn_is_echoed_with_tool_calls(monkeypatch):
+    _stub(monkeypatch, [_native("call_1", "read_artifact", '{"name":"loss_curves"}')])
+    policy = LLMPolicy()
+    policy("prompt", [])
+    assistant = [m for m in policy.messages if m["role"] == "assistant"][-1]
+    assert assistant["tool_calls"][0]["id"] == "call_1"
+
+
+def test_result_returns_as_tool_message_addressed_to_the_call(monkeypatch):
+    _stub(monkeypatch, [
+        _native("call_1", "read_artifact", '{"name":"loss_curves"}'),
+        _native("call_2", "view_code", "{}"),
+    ])
+    policy = LLMPolicy()
+    policy("prompt", [])                       # round 1: emits call_1
+    history = [{"tool": "read_artifact", "observation": "GRADS", "ok": True}]
+    policy("prompt", history)                  # round 2: answers call_1
+
+    tool_msgs = [m for m in policy.messages if m["role"] == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0]["tool_call_id"] == "call_1"
+    assert tool_msgs[0]["name"] == "read_artifact"
+    assert tool_msgs[0]["content"] == "GRADS"
+    assert isinstance(tool_msgs[0]["content"], str)
+
+
+def test_tool_message_follows_its_assistant_turn_immediately(monkeypatch):
+    _stub(monkeypatch, [
+        _native("call_1", "read_artifact", '{"name":"loss_curves"}'),
+        _native("call_2", "view_code", "{}"),
+    ])
+    policy = LLMPolicy()
+    policy("prompt", [])
+    policy("prompt", [{"tool": "read_artifact", "observation": "GRADS", "ok": True}])
+
+    roles = [m["role"] for m in policy.messages]
+    i = roles.index("tool")
+    assert roles[i - 1] == "assistant"
+
+
+def test_json_fallback_has_no_call_id_so_uses_a_user_turn(monkeypatch):
+    _stub(monkeypatch, [
+        _reply('{"tool": "read_artifact", "args": {"name": "loss_curves"}}'),
+        _reply('{"tool": "submit", "args": {"diagnosis": "lr"}}'),
+    ])
+    policy = LLMPolicy()
+    policy("prompt", [])
+    policy("prompt", [{"tool": "read_artifact", "observation": "GRADS", "ok": True}])
+    assert not [m for m in policy.messages if m["role"] == "tool"]
+    assert any("GRADS" in m["content"] for m in policy.messages if m["role"] == "user")
+
+
 def test_transport_error_propagates(monkeypatch):
     def boom(url, payload, api_key, timeout):
         raise L.LLMError("connection refused")
