@@ -72,6 +72,7 @@ class SilentMLEnv(RepoEnv):
         )
         self.judge_seeds = tuple(judge_seeds)
         self.judge_result = None
+        self.judge_error = None
         self.submit_message = ""
 
     # -- task -----------------------------------------------------------------
@@ -85,6 +86,7 @@ class SilentMLEnv(RepoEnv):
         )
         self.submit_message = ""
         self.judge_result = None
+        self.judge_error = None
 
     @property
     def task_name(self) -> str:
@@ -140,15 +142,28 @@ class SilentMLEnv(RepoEnv):
         try:
             patched_source = self.workspace.read_file(PIPELINE_FILE)
         except Exception as e:
-            self.last_eval = EvalOutput(False, f"could not read {PIPELINE_FILE}: {e}")
+            self.judge_error = f"could not read {PIPELINE_FILE}: {e}"
+            self.last_eval = EvalOutput(False, self.judge_error)
             return self.last_eval
 
-        result = judge_episode(
-            self.episode_dir,
-            patched_source,
-            self.submit_message,
-            seeds=self.judge_seeds,
-        )
+        try:
+            result = judge_episode(
+                self.episode_dir,
+                patched_source,
+                self.submit_message,
+                seeds=self.judge_seeds,
+            )
+        except Exception as e:
+            # An edit that makes training crash is a failed submission, not a
+            # missing measurement. Letting this propagate loses the episode
+            # entirely, because the agent swallows tool exceptions and the
+            # result is never recorded.
+            self.judge_error = f"{type(e).__name__}: {e}"
+            self.last_eval = EvalOutput(
+                False, f"the patched pipeline failed to run: {self.judge_error}"
+            )
+            return self.last_eval
+
         self.judge_result = result
         success = result.functional_pass and result.ablation != "fail"
         self.last_eval = EvalOutput(success, result.render())
@@ -187,6 +202,11 @@ class SilentMLEnv(RepoEnv):
         r = self.judge_result
         return {
             "task": self.task_name,
+            # Distinguishes an edit that broke training (judge_error) from an
+            # episode that ended without ever submitting (both were previously
+            # reported as an empty breakdown).
+            "judge_error": self.judge_error,
+            "submitted": bool(self.submit_message) or bool(r) or bool(self.judge_error),
             "resolved": bool(r and r.functional_pass and r.ablation != "fail"),
             "functional_pass": bool(r and r.functional_pass),
             "ablation": (r.ablation if r else "not_run"),
