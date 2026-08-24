@@ -1,0 +1,20 @@
+# debug-gym LLM config for a locally served model.
+# Point --llm-config at this file: the key is what you pass to --model.
+qwen3-coder:
+  model: qwen3-coder:30b          # the tag Ollama serves
+  tokenizer: Qwen/Qwen3-Coder-30B-A3B-Instruct
+  endpoint: "http://localhost:11434/v1"
+  api_key: "ollama"               # Ollama ignores it, but the client requires one
+  context_limit: 32               # thousands of tokens
+  generate_kwargs:
+    temperature: 0.0
+
+# Same model served by vLLM instead.
+qwen3-coder-vllm:
+  model: qwen3-coder:30b
+  tokenizer: Qwen/Qwen3-Coder-30B-A3B-Instruct
+  endpoint: "http://localhost:8000/v1"
+  api_key: "vllm"
+  context_limit: 32
+  generate_kwargs:
+    temperature: 0.0
