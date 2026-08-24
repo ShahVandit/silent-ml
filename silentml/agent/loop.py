@@ -99,6 +99,20 @@ def _dispatch(session: EpisodeSession, tool: str, args: dict) -> str:
     raise ToolError(f"unknown tool {tool!r}")
 
 
+def _budget_note(remaining: int, session: EpisodeSession) -> str:
+    """Tell the agent how many calls are left and what still has to happen."""
+    if session.patches_applied:
+        todo = "You have applied a patch; call submit before the budget runs out."
+    else:
+        todo = "You have NOT applied a patch yet; submit is refused without one."
+    if remaining <= 0:
+        return "[no tool calls remaining]"
+    if remaining <= 5:
+        return (f"[{remaining} tool calls remaining - stop investigating and act now. "
+                f"{todo}]")
+    return f"[{remaining} tool calls remaining. {todo}]"
+
+
 def run_episode(
     episode_dir: str | Path,
     policy: Policy,
@@ -109,7 +123,7 @@ def run_episode(
     prompt = build_prompt(session)
     history: list[dict] = []
     try:
-        for _ in range(max_calls):
+        for turn in range(max_calls):
             action = policy(prompt, history)
             tool, args = action["tool"], action.get("args", {})
             try:
@@ -118,6 +132,10 @@ def run_episode(
             except (ToolError, KeyError) as e:
                 observation = f"ERROR: {e}"
                 ok = False
+            # An agent that cannot see its remaining budget re-reads the same
+            # code instead of committing to a fix, then runs out having never
+            # patched. State the budget, and escalate as it gets short.
+            observation = f"{observation}\n\n{_budget_note(max_calls - turn - 1, session)}"
             history.append({"tool": tool, "args": args, "observation": observation, "ok": ok})
             if tool == "submit" and ok:
                 break
